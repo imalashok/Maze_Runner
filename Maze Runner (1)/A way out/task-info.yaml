@@ -1,0 +1,970 @@
+type: edu
+custom_name: stage4
+files:
+- name: src/maze/Main.java
+  visible: true
+  text: |
+    package maze;
+
+    public class Main {
+        public static void main(String[] args) {
+            System.out.println("Hello World!");
+        }
+    }
+  learner_created: false
+- name: test/MazeRunnerTest.java
+  visible: false
+  text: |
+    import maze.Main;
+    import org.hyperskill.hstest.stage.StageTest;
+    import org.hyperskill.hstest.testcase.CheckResult;
+    import org.hyperskill.hstest.testcase.TestCase;
+
+    import java.util.ArrayList;
+    import java.util.List;
+    import java.util.stream.Collectors;
+
+    enum Elem {
+        WALL, EMPTY, PATH, DUMMY;
+
+        static Elem get(char c) {
+            if (c == '\u2588') {
+                return WALL;
+            } else if (c == ' ') {
+                return EMPTY;
+            } else if (c == '/') {
+                return PATH;
+            } else {
+                return null;
+            }
+        }
+    }
+
+    class Maze {
+
+        // maze[height][width]
+        // maze[row][col]
+        Elem[][] maze;
+
+        Maze(Maze other) {
+            maze = new Elem[other.getHeight()][other.getWidth()];
+            for (int h = 0; h < other.getHeight(); h++) {
+                for (int w = 0; w < other.getWidth(); w++) {
+                    maze[h][w] = other.maze[h][w];
+                }
+            }
+        }
+
+        Maze(List<String> lines) throws Exception {
+
+            int lineCount = 1;
+            for (String line : lines) {
+                if (line.length() % 2 != 0) {
+                    throw new Exception("Line " + lineCount + " of the maze " +
+                        "contains odd number of characters. Should be always even.");
+                }
+
+                for (char c : line.toCharArray()) {
+                    if (Elem.get(c) == null) {
+                        String hex = Integer.toHexString((int)c);
+                        throw new Exception(
+                            "Found strange symbol in the " + lineCount +
+                                " line of the maze: \\u" + hex);
+                    }
+                }
+
+                int lineWidth = line.length() / 2;
+
+                for (int currWidth = 0; currWidth < lineWidth; currWidth++) {
+                    int currIndex = currWidth * 2;
+                    int nextIndex = currIndex + 1;
+
+                    char currChar = line.charAt(currIndex);
+                    char nextChar = line.charAt(nextIndex);
+
+                    if (currChar != nextChar) {
+                        throw new Exception("There are symbols in " +
+                            "this line that don't appear twice in a row " +
+                            "(at indexes " + currIndex + " and " + nextIndex + ").\n" +
+                            "Line: \"" + line + "\"");
+                    }
+                }
+
+                lineCount++;
+            }
+
+            int mazeWidth = lines.get(0).length() / 2;
+            int mazeHeight = lines.size();
+
+            lineCount = 1;
+            for (String line : lines) {
+                if (line.length() / 2 != mazeWidth) {
+                    throw new Exception("The first line of the maze contains " +
+                        lines.get(0).length() + " characters, but the line #" +
+                        lineCount + " contains " + line.length() + " characters.");
+                }
+                lineCount++;
+            }
+
+            maze = new Elem[mazeHeight][mazeWidth];
+
+            for (int currHeight = 0; currHeight < mazeHeight; currHeight++) {
+                String line = lines.get(currHeight);
+                for (int currWidth = 0; currWidth < mazeWidth; currWidth++) {
+                    char c = line.charAt(currWidth * 2);
+                    maze[currHeight][currWidth] = Elem.get(c);
+                }
+            }
+
+            if (maze[0][0] != Elem.WALL ||
+                maze[0][mazeWidth - 1] != Elem.WALL ||
+                maze[mazeHeight - 1][0] != Elem.WALL ||
+                maze[mazeHeight - 1][mazeWidth - 1] != Elem.WALL) {
+                throw new Exception("All four corners of the maze must be walls.");
+            }
+
+            for (int h = 0; h <= mazeHeight - 3; h++) {
+                for (int w = 0; w <= mazeWidth - 3; w++) {
+                    if (getElem(h, w) == Elem.WALL &&
+                        getElem(h, w + 1) == Elem.WALL &&
+                        getElem(h, w + 2) == Elem.WALL &&
+
+                        getElem(h + 1, w) == Elem.WALL &&
+                        getElem(h + 1, w + 1) == Elem.WALL &&
+                        getElem(h + 1, w + 2) == Elem.WALL &&
+
+                        getElem(h + 2, w) == Elem.WALL &&
+                        getElem(h + 2, w + 1) == Elem.WALL &&
+                        getElem(h + 2, w + 2) == Elem.WALL) {
+
+                        throw new Exception("There are 3x3 block in the maze " +
+                            "consisting only of walls. Such blocks are not allowed.");
+                    }
+                }
+            }
+        }
+
+        Elem[] getRow(int rowNum) {
+            Elem[] newRow = new Elem[getWidth()];
+            for (int i = 0; i < getWidth(); i++) {
+                newRow[i] = maze[rowNum][i];
+            }
+            return newRow;
+        }
+
+        Elem[] getCol(int colNum) {
+            Elem[] newCol = new Elem[getHeight()];
+            for (int i = 0; i < getHeight(); i++) {
+                newCol[i] = maze[i][colNum];
+            }
+            return newCol;
+        }
+
+        Elem getElem(int height, int width) {
+            return maze[height][width];
+        }
+
+        void setElem(int height, int width, Elem elem) {
+            maze[height][width] = elem;
+        }
+
+        int getWidth() {
+            return maze[0].length;
+        }
+
+        int getHeight() {
+            return maze.length;
+        }
+
+        Maze copy() {
+            return new Maze(this);
+        }
+
+        int count(Elem toCount) {
+            int sum = 0;
+            for (Elem[] row : maze) {
+                for (Elem e : row) {
+                    if (e == toCount) {
+                        sum++;
+                    }
+                }
+            }
+            return sum;
+        }
+
+        int countAround(int h, int w, Elem elem) {
+            int sum = 0;
+
+            if (h + 1 < getHeight() &&
+                getElem(h + 1, w) == elem) {
+                sum++;
+            }
+
+            if (h - 1 >= 0 &&
+                getElem(h - 1, w) == elem) {
+                sum++;
+            }
+
+            if (w + 1 < getWidth() &&
+                getElem(h, w + 1) == elem) {
+                sum++;
+            }
+
+            if (w - 1 >= 0 &&
+                getElem(h, w - 1) == elem) {
+                sum++;
+            }
+
+            return sum;
+        }
+
+        int countEntrances() {
+            int entranceCount = 0;
+            for (Elem[] line : new Elem[][] {
+                getCol(0),
+                getCol(getWidth() - 1),
+                getRow(0),
+                getRow(getHeight() - 1)
+            }) {
+
+                for (Elem e : line) {
+                    if (e != Elem.WALL) {
+                        entranceCount++;
+                    }
+                }
+            }
+            return entranceCount;
+        }
+
+        private void propagate(Elem from, Elem to) {
+            boolean didPropagate = true;
+            while (didPropagate) {
+                didPropagate = false;
+                for (int h = 0; h < getHeight(); h++) {
+                    for (int w = 0; w < getWidth(); w++) {
+                        if (getElem(h, w) == from) {
+                            if (countAround(h, w, to) > 0) {
+                                didPropagate = true;
+                                setElem(h, w, to);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        int checkAccessibility() {
+            int entranceHeight = 0;
+            int entranceWidth = 0;
+
+            findPoints: {
+                for (int currWidth : new int[] {0, getWidth() - 1}) {
+                    for (int currHeight = 0; currHeight < getHeight(); currHeight++) {
+                        if (getElem(currHeight, currWidth) != Elem.WALL) {
+                            entranceHeight = currHeight;
+                            entranceWidth = currWidth;
+                            break findPoints;
+                        }
+                    }
+                }
+
+                for (int currHeight : new int[] {0, getHeight() - 1}) {
+                    for (int currWidth = 0; currWidth < getWidth(); currWidth++) {
+                        if (getElem(currHeight, currWidth) != Elem.WALL) {
+                            entranceHeight = currHeight;
+                            entranceWidth = currWidth;
+                            break findPoints;
+                        }
+                    }
+                }
+            }
+
+            Maze copy = copy();
+            copy.setElem(entranceHeight, entranceWidth, Elem.PATH);
+            copy.propagate(Elem.EMPTY, Elem.PATH);
+
+            return copy.count(Elem.EMPTY);
+        }
+
+        int checkPath() throws Exception {
+            int entranceHeight = 0;
+            int entranceWidth = 0;
+
+            for (int currWidth : new int[] {0, getWidth() - 1}) {
+                for (int currHeight = 0; currHeight < getHeight(); currHeight++) {
+                    if (getElem(currHeight, currWidth) == Elem.EMPTY) {
+                        throw new Exception("If the maze is solved all " +
+                            "the entrances should be marked with '//' characters");
+                    }
+                    if (getElem(currHeight, currWidth) == Elem.PATH) {
+                        entranceHeight = currHeight;
+                        entranceWidth = currWidth;
+                    }
+                }
+            }
+
+            for (int currHeight : new int[] {0, getHeight() - 1}) {
+                for (int currWidth = 0; currWidth < getWidth(); currWidth++) {
+                    if (getElem(currHeight, currWidth) == Elem.EMPTY) {
+                        throw new Exception("If the maze is solved all " +
+                            "the entrances should be marked with '//' characters");
+                    }
+                    if (getElem(currHeight, currWidth) == Elem.PATH) {
+                        entranceHeight = currHeight;
+                        entranceWidth = currWidth;
+                    }
+                }
+            }
+
+            for (int h = 0; h < getHeight(); h++) {
+                for (int w = 0; w < getWidth(); w++) {
+                    if (getElem(h, w) == Elem.PATH) {
+                        if (countAround(h, w, Elem.PATH) >= 3) {
+                            throw new Exception("The escape path shouldn't branch off, " +
+                                "it should go in one direction.");
+                        }
+                    }
+                }
+            }
+
+            Maze copy = copy();
+            copy.setElem(entranceHeight, entranceWidth, Elem.DUMMY);
+            copy.propagate(Elem.PATH, Elem.DUMMY);
+
+            return copy.count(Elem.PATH);
+        }
+
+        boolean equals(Maze other) {
+            if (getWidth() != other.getWidth() || getHeight() != other.getHeight()) {
+                return false;
+            }
+            for (int h = 0; h < getHeight(); h++) {
+                for (int w = 0; w < getWidth(); w++) {
+                    if (getElem(h, w) == Elem.WALL && other.getElem(h, w) != Elem.WALL ||
+                        getElem(h, w) != Elem.WALL && other.getElem(h, w) == Elem.WALL) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+
+        static List<Maze> parse(String text) throws Exception {
+
+            List<Maze> mazes = new ArrayList<>();
+
+            List<String> lines = text
+                .lines()
+                .collect(Collectors.toList());
+
+            lines.add("");
+
+            List<String> mazeLines = new ArrayList<>();
+
+            boolean isStarted = false;
+            for (String line : lines) {
+                if (line.contains("\u2588")) {
+                    isStarted = true;
+                    mazeLines.add(line);
+                } else if (isStarted) {
+                    isStarted = false;
+                    Maze maze = new Maze(mazeLines);
+                    mazes.add(maze);
+                    mazeLines.clear();
+                }
+            }
+
+            return mazes;
+        }
+
+    }
+
+    class Clue {
+        int size;
+        boolean withPath;
+        int count;
+        Clue(int s, int c, boolean wp) {
+            size = s;
+            count = c;
+            withPath = wp;
+        }
+    }
+
+    public class MazeRunnerTest extends StageTest<Clue> {
+
+        public MazeRunnerTest() {
+            super(Main.class);
+        }
+
+        @Override
+        public List<TestCase<Clue>> generate() {
+            return List.of(
+                new TestCase<Clue>()
+                    .setInput("1\n17\n0")
+                    .setAttach(new Clue(17, 1, false)),
+
+                new TestCase<Clue>()
+                    .setInput("1\n29\n3\ntest_maze.txt\n0")
+                    .setAttach(new Clue(29, 1, false)),
+
+                new TestCase<Clue>()
+                    .setInput("2\ntest_maze.txt\n4\n0")
+                    .setAttach(new Clue(29, 1, false)),
+
+                new TestCase<Clue>()
+                    .setInput("1\n35\n3\ntest_maze.txt\n0")
+                    .setAttach(new Clue(35, 1, false)),
+
+                new TestCase<Clue>()
+                    .setInput("2\ntest_maze.txt\n4\n0")
+                    .setAttach(new Clue(35, 1, false)),
+
+                new TestCase<Clue>()
+                    .setInput("2\ntest_maze.txt\n4\n5\n0")
+                    .setAttach(new Clue(35, 2, true))
+            );
+        }
+
+        @Override
+        public CheckResult check(String reply, Clue clue) {
+
+            List<Maze> mazes;
+            try {
+                mazes = Maze.parse(reply);
+            } catch (Exception e) {
+                return CheckResult.wrong(
+                    e.getMessage()
+                );
+            }
+
+            if (mazes.size() == 0) {
+                return CheckResult.wrong(
+                    "No mazes found in the output. Check if you are using " +
+                        "\\u2588 character to print the maze."
+                );
+            }
+
+            if (mazes.size() != clue.count) {
+                if (clue.count == 1) {
+                    return CheckResult.wrong(
+                        "Found " + mazes.size() + " mazes in the output. " +
+                            "Should be only one maze."
+                    );
+                } else {
+                    return CheckResult.wrong(
+                        "Found " + mazes.size() + " mazes in the output. " +
+                            "Should be two mazes."
+                    );
+                }
+            }
+
+            Maze fst = mazes.get(0);
+            Maze snd = mazes.size() == 2 ? mazes.get(1) : null;
+
+            if (snd != null && !fst.equals(snd)) {
+                return CheckResult.wrong(
+                    "The two mazes shown should be equal, but they are different."
+                );
+            }
+
+            if (fst.count(Elem.PATH) != 0) {
+                return CheckResult.wrong(
+                    "The first maze should not contain '/' characters."
+                );
+            }
+
+            int entrances = fst.countEntrances();
+            if (entrances != 2) {
+                return new CheckResult(false,
+                    "There are " + entrances + " entrances to the maze, " +
+                        "should be only two.");
+            }
+
+            int emptyLeft = fst.checkAccessibility();
+            if (emptyLeft > 0) {
+                return new CheckResult(false,
+                    "There are " + emptyLeft + " empty " +
+                        "cells that are inaccessible from the entrance of the maze " +
+                        "(or there is no way from the entrance to the exit)."
+                );
+            }
+
+            if (fst.getHeight() != clue.size) {
+                return new CheckResult(false,
+                    "Number of rows in the maze is incorrect. " +
+                        "It's " + fst.getHeight() + ", but should be " + clue.size);
+            }
+
+            if (fst.getWidth() != clue.size) {
+                return new CheckResult(false,
+                    "Number of columns in the maze is incorrect. " +
+                        "It's " + fst.getWidth() + ", but should be " + clue.size);
+            }
+
+            if (snd != null && clue.withPath) {
+                try {
+                    int pathLeft = snd.checkPath();
+                    if (pathLeft > 0) {
+                        return new CheckResult(false,
+                            "There are " + pathLeft + " escape path ('//') " +
+                                "cells that are separated from the escape path of the maze " +
+                                "(or there is a break somewhere in the escape path)."
+                        );
+                    }
+                } catch (Exception e) {
+                    return CheckResult.wrong(
+                        e.getMessage()
+                    );
+                }
+            }
+
+            return CheckResult.correct();
+        }
+    }
+  learner_created: false
+- name: src/maze/PrimAlgorithm.java
+  visible: true
+  text: |
+    package maze;
+
+    import java.util.ArrayList;
+    import java.util.List;
+    import java.util.Random;
+
+    public class PrimAlgorithm {
+        private static final Random random = new Random();
+        private static final List<String> minimumSpanningTree = new ArrayList<>();
+        private static final List<String> nodesInTree = new ArrayList<>();
+        private static int[][] nodeMatrix;
+        private static int[][] weightsMatrix;
+        private static int weightsMatrixSize = 0;
+        private static int primHeight = 0;
+        private static int primWidth = 0;
+        private static int mazeHeight = 0;
+        private static int mazeWidth = 0;
+        private static String[][] maze;
+
+
+        public static String[][] generateMazeWithPrimAlgorithm(int height, int width) {
+            minimumSpanningTree.clear();
+            nodesInTree.clear();
+
+            primHeight = height % 2 == 0 ? (height / 2) - 1 : height / 2;
+            primWidth = width % 2 == 0 ? (width / 2) - 1 : width / 2;
+
+
+            weightsMatrixSize = primHeight * primWidth;
+            mazeHeight = height;
+            mazeWidth = width;
+            maze = new String[height][width];
+
+            nodeMatrix = new int[height][width];
+            weightsMatrix = new int[weightsMatrixSize][weightsMatrixSize];
+            int node = 0;
+
+            for (int i = 0; i < primHeight; i++) {
+                for (int j = 0; j < primWidth; j++) {
+                    nodeMatrix[i][j] = node;
+                    node++;
+                }
+            }
+
+            for (int i = 0; i < weightsMatrixSize; i++) {
+                for (int j = 0; j < weightsMatrixSize; j++) {
+                    weightsMatrix[i][j] = 0;
+                }
+            }
+
+            for (int i = 0; i < primHeight; i++) {
+                for (int j = 0; j < primWidth; j++) {
+                    if (i < primHeight - 1 && j < primWidth - 1) {
+                        weightsMatrix[nodeMatrix[i][j]][nodeMatrix[i][j + 1]] = random.nextInt(9) + 1;
+                        weightsMatrix[nodeMatrix[i][j + 1]][nodeMatrix[i][j]] = weightsMatrix[nodeMatrix[i][j]][nodeMatrix[i][j + 1]];
+
+                        weightsMatrix[nodeMatrix[i][j]][nodeMatrix[i + 1][j]] = random.nextInt(9) + 1;
+                        weightsMatrix[nodeMatrix[i + 1][j]][nodeMatrix[i][j]] = weightsMatrix[nodeMatrix[i][j]][nodeMatrix[i + 1][j]];
+
+                    } else if (j == primWidth - 1 && i != primHeight - 1) {
+                        weightsMatrix[nodeMatrix[i][j]][nodeMatrix[i + 1][j]] = random.nextInt(9) + 1;
+                        weightsMatrix[nodeMatrix[i + 1][j]][nodeMatrix[i][j]] = weightsMatrix[nodeMatrix[i][j]][nodeMatrix[i + 1][j]];
+                    } else if (j != primWidth - 1 && i == primHeight - 1) {
+                        weightsMatrix[nodeMatrix[i][j]][nodeMatrix[i][j + 1]] = random.nextInt(9) + 1;
+                        weightsMatrix[nodeMatrix[i][j + 1]][nodeMatrix[i][j]] = weightsMatrix[nodeMatrix[i][j]][nodeMatrix[i][j + 1]];
+                    }
+                }
+            }
+
+
+    //        for debug only - prints weights matrix
+    //        for (int i = 0; i < weightsMatrixSize; i++) {
+    //            for (int j = 0; j < weightsMatrixSize; j++) {
+    //                System.out.print(weightsMatrix[i][j] + " ");
+    //            }
+    //            System.out.println();
+    //        }
+
+            int rootNodeHeight = random.nextInt(primHeight);
+            int rootNodeWidth = random.nextInt(primWidth);
+            nodesInTree.add(rootNodeHeight + " " + rootNodeWidth);
+
+    //        for debug only - prints the root node where findMinimumSpanningTree algorithm starts from
+    //        System.out.println(rootNodeHeight + " " + rootNodeWidth);
+
+            findMinimumSpanningTree(nodesInTree);
+            createMaze();
+            createEntranceExitInMaze();
+
+            return maze;
+        }
+
+        public static List<String> findMinimumSpanningTree(List<String> nodesInTree) {
+            if (nodesInTree.size() == weightsMatrixSize) {
+                return nodesInTree;
+            } else {
+                int minWeight = 100;
+                int nextNodeHeight = 0;
+                int nextNodeWidth = 0;
+                String pairNode = "";
+
+                for (String nodes : nodesInTree) {
+                    String[] coordinates = nodes.split(" ");
+                    int coordinateHeight = Integer.parseInt(coordinates[0]);
+                    int coordinateWidth = Integer.parseInt(coordinates[1]);
+
+                    if (coordinateHeight == 0) {
+                        if (coordinateWidth < primWidth - 1) {
+                            if (weightsMatrix[nodeMatrix[coordinateHeight][coordinateWidth]][nodeMatrix[coordinateHeight][coordinateWidth + 1]] < minWeight && !nodesInTree.contains(coordinateHeight + " " + (coordinateWidth + 1))) {
+                                minWeight = weightsMatrix[nodeMatrix[coordinateHeight][coordinateWidth]][nodeMatrix[coordinateHeight][coordinateWidth + 1]];
+                                nextNodeHeight = coordinateHeight;
+                                nextNodeWidth = coordinateWidth + 1;
+                                pairNode = nodes;
+                            }
+                        }
+
+                        if (coordinateWidth > 0) {
+                            if (weightsMatrix[nodeMatrix[coordinateHeight][coordinateWidth]][nodeMatrix[coordinateHeight][coordinateWidth - 1]] < minWeight && !nodesInTree.contains(coordinateHeight + " " + (coordinateWidth - 1))) {
+                                minWeight = weightsMatrix[nodeMatrix[coordinateHeight][coordinateWidth]][nodeMatrix[coordinateHeight][coordinateWidth - 1]];
+                                nextNodeHeight = coordinateHeight;
+                                nextNodeWidth = coordinateWidth - 1;
+                                pairNode = nodes;
+                            }
+                        }
+
+                        if (weightsMatrix[nodeMatrix[coordinateHeight][coordinateWidth]][nodeMatrix[coordinateHeight + 1][coordinateWidth]] < minWeight && !nodesInTree.contains((coordinateHeight + 1) + " " + coordinateWidth)) {
+                            minWeight = weightsMatrix[nodeMatrix[coordinateHeight][coordinateWidth]][nodeMatrix[coordinateHeight + 1][coordinateWidth]];
+                            nextNodeHeight = coordinateHeight + 1;
+                            nextNodeWidth = coordinateWidth;
+                            pairNode = nodes;
+                        }
+                    }
+
+                    if (coordinateHeight == primHeight - 1) {
+                        if (coordinateWidth > 0) {
+                            if (weightsMatrix[nodeMatrix[coordinateHeight][coordinateWidth]][nodeMatrix[coordinateHeight][coordinateWidth - 1]] < minWeight && !nodesInTree.contains(coordinateHeight + " " + (coordinateWidth - 1))) {
+                                minWeight = weightsMatrix[nodeMatrix[coordinateHeight][coordinateWidth]][nodeMatrix[coordinateHeight][coordinateWidth - 1]];
+                                nextNodeHeight = coordinateHeight;
+                                nextNodeWidth = coordinateWidth - 1;
+                                pairNode = nodes;
+                            }
+                        }
+
+                        if (coordinateWidth < primWidth - 1) {
+                            if (weightsMatrix[nodeMatrix[coordinateHeight][coordinateWidth]][nodeMatrix[coordinateHeight][coordinateWidth + 1]] < minWeight && !nodesInTree.contains(coordinateHeight + " " + (coordinateWidth + 1))) {
+                                minWeight = weightsMatrix[nodeMatrix[coordinateHeight][coordinateWidth]][nodeMatrix[coordinateHeight][coordinateWidth + 1]];
+                                nextNodeHeight = coordinateHeight;
+                                nextNodeWidth = coordinateWidth + 1;
+                                pairNode = nodes;
+                            }
+                        }
+
+                        if (weightsMatrix[nodeMatrix[coordinateHeight][coordinateWidth]][nodeMatrix[coordinateHeight - 1][coordinateWidth]] < minWeight && !nodesInTree.contains((coordinateHeight - 1) + " " + coordinateWidth)) {
+                            minWeight = weightsMatrix[nodeMatrix[coordinateHeight][coordinateWidth]][nodeMatrix[coordinateHeight - 1][coordinateWidth]];
+                            nextNodeHeight = coordinateHeight - 1;
+                            nextNodeWidth = coordinateWidth;
+                            pairNode = nodes;
+                        }
+                    }
+
+
+                    if (coordinateWidth == 0) {
+                        if (weightsMatrix[nodeMatrix[coordinateHeight][coordinateWidth]][nodeMatrix[coordinateHeight][coordinateWidth + 1]] < minWeight && !nodesInTree.contains(coordinateHeight + " " + (coordinateWidth + 1))) {
+                            minWeight = weightsMatrix[nodeMatrix[coordinateHeight][coordinateWidth]][nodeMatrix[coordinateHeight][coordinateWidth + 1]];
+                            nextNodeHeight = coordinateHeight;
+                            nextNodeWidth = coordinateWidth + 1;
+                            pairNode = nodes;
+                        }
+
+                        if (coordinateHeight > 0) {
+                            if (weightsMatrix[nodeMatrix[coordinateHeight][coordinateWidth]][nodeMatrix[coordinateHeight - 1][coordinateWidth]] < minWeight && !nodesInTree.contains((coordinateHeight - 1) + " " + coordinateWidth)) {
+                                minWeight = weightsMatrix[nodeMatrix[coordinateHeight][coordinateWidth]][nodeMatrix[coordinateHeight - 1][coordinateWidth]];
+                                nextNodeHeight = coordinateHeight - 1;
+                                nextNodeWidth = coordinateWidth;
+                                pairNode = nodes;
+                            }
+                        }
+
+                        if (coordinateHeight < primHeight - 1) {
+                            if (weightsMatrix[nodeMatrix[coordinateHeight][coordinateWidth]][nodeMatrix[coordinateHeight + 1][coordinateWidth]] < minWeight && !nodesInTree.contains((coordinateHeight + 1) + " " + coordinateWidth)) {
+                                minWeight = weightsMatrix[nodeMatrix[coordinateHeight][coordinateWidth]][nodeMatrix[coordinateHeight + 1][coordinateWidth]];
+                                nextNodeHeight = coordinateHeight + 1;
+                                nextNodeWidth = coordinateWidth;
+                                pairNode = nodes;
+                            }
+                        }
+                    }
+
+
+                    if (coordinateWidth == primWidth - 1) {
+                        if (weightsMatrix[nodeMatrix[coordinateHeight][coordinateWidth]][nodeMatrix[coordinateHeight][coordinateWidth - 1]] < minWeight && !nodesInTree.contains(coordinateHeight + " " + (coordinateWidth - 1))) {
+                            minWeight = weightsMatrix[nodeMatrix[coordinateHeight][coordinateWidth]][nodeMatrix[coordinateHeight][coordinateWidth - 1]];
+                            nextNodeHeight = coordinateHeight;
+                            nextNodeWidth = coordinateWidth - 1;
+                            pairNode = nodes;
+                        }
+
+                        if (coordinateHeight > 0) {
+                            if (weightsMatrix[nodeMatrix[coordinateHeight][coordinateWidth]][nodeMatrix[coordinateHeight - 1][coordinateWidth]] < minWeight && !nodesInTree.contains((coordinateHeight - 1) + " " + coordinateWidth)) {
+                                minWeight = weightsMatrix[nodeMatrix[coordinateHeight][coordinateWidth]][nodeMatrix[coordinateHeight - 1][coordinateWidth]];
+                                nextNodeHeight = coordinateHeight - 1;
+                                nextNodeWidth = coordinateWidth;
+                                pairNode = nodes;
+                            }
+                        }
+
+                        if (coordinateHeight < primHeight - 1) {
+                            if (weightsMatrix[nodeMatrix[coordinateHeight][coordinateWidth]][nodeMatrix[coordinateHeight + 1][coordinateWidth]] < minWeight && !nodesInTree.contains((coordinateHeight + 1) + " " + coordinateWidth)) {
+                                minWeight = weightsMatrix[nodeMatrix[coordinateHeight][coordinateWidth]][nodeMatrix[coordinateHeight + 1][coordinateWidth]];
+                                nextNodeHeight = coordinateHeight + 1;
+                                nextNodeWidth = coordinateWidth;
+                                pairNode = nodes;
+                            }
+                        }
+                    }
+
+
+                    if (coordinateHeight > 0 && coordinateHeight < primHeight - 1 && coordinateWidth > 0 && coordinateWidth < primWidth - 1) {
+                        if (weightsMatrix[nodeMatrix[coordinateHeight][coordinateWidth]][nodeMatrix[coordinateHeight][coordinateWidth - 1]] < minWeight && !nodesInTree.contains(coordinateHeight + " " + (coordinateWidth - 1))) {
+                            minWeight = weightsMatrix[nodeMatrix[coordinateHeight][coordinateWidth]][nodeMatrix[coordinateHeight][coordinateWidth - 1]];
+                            nextNodeHeight = coordinateHeight;
+                            nextNodeWidth = coordinateWidth - 1;
+                            pairNode = nodes;
+                        }
+                        if (weightsMatrix[nodeMatrix[coordinateHeight][coordinateWidth]][nodeMatrix[coordinateHeight][coordinateWidth + 1]] < minWeight && !nodesInTree.contains(coordinateHeight + " " + (coordinateWidth + 1))) {
+                            minWeight = weightsMatrix[nodeMatrix[coordinateHeight][coordinateWidth]][nodeMatrix[coordinateHeight][coordinateWidth + 1]];
+                            nextNodeHeight = coordinateHeight;
+                            nextNodeWidth = coordinateWidth + 1;
+                            pairNode = nodes;
+                        }
+                        if (weightsMatrix[nodeMatrix[coordinateHeight][coordinateWidth]][nodeMatrix[coordinateHeight - 1][coordinateWidth]] < minWeight && !nodesInTree.contains((coordinateHeight - 1) + " " + coordinateWidth)) {
+                            minWeight = weightsMatrix[nodeMatrix[coordinateHeight][coordinateWidth]][nodeMatrix[coordinateHeight - 1][coordinateWidth]];
+                            nextNodeHeight = coordinateHeight - 1;
+                            nextNodeWidth = coordinateWidth;
+                            pairNode = nodes;
+                        }
+                        if (weightsMatrix[nodeMatrix[coordinateHeight][coordinateWidth]][nodeMatrix[coordinateHeight + 1][coordinateWidth]] < minWeight && !nodesInTree.contains((coordinateHeight + 1) + " " + coordinateWidth)) {
+                            minWeight = weightsMatrix[nodeMatrix[coordinateHeight][coordinateWidth]][nodeMatrix[coordinateHeight + 1][coordinateWidth]];
+                            nextNodeHeight = coordinateHeight + 1;
+                            nextNodeWidth = coordinateWidth;
+                            pairNode = nodes;
+                        }
+                    }
+                }
+
+                nodesInTree.add(nextNodeHeight + " " + nextNodeWidth);
+                minimumSpanningTree.add(pairNode + " " + nextNodeHeight + " " + nextNodeWidth);
+
+    //          for debug only - prints coordinates of minimum spanning tree
+    //          System.out.println(minimumSpanningTree);
+            }
+            return findMinimumSpanningTree(nodesInTree);
+        }
+
+        public static void createMaze() {
+
+            //fill the maze with walls
+            for (int i = 0; i < mazeHeight; i++) {
+                for (int j = 0; j < mazeWidth; j++) {
+                    maze[i][j] = "\u2588\u2588";
+                }
+            }
+
+            //
+            for (String edge : minimumSpanningTree) {
+                String[] coordinates = edge.split(" ");
+                int nodeH1 = Integer.parseInt(coordinates[0]) * 2 + 1;
+                int nodeW1 = Integer.parseInt(coordinates[1]) * 2 + 1;
+                int nodeH2 = Integer.parseInt(coordinates[2]) * 2 + 1;
+                int nodeW2 = Integer.parseInt(coordinates[3]) * 2 + 1;
+
+                int nodeH3 = (nodeH1 + nodeH2) / 2;
+                int nodeW3 = (nodeW1 + nodeW2) / 2;
+
+                //create paths between two connected nodes
+                maze[nodeH1][nodeW1] = "  ";
+                maze[nodeH2][nodeW2] = "  ";
+                maze[nodeH3][nodeW3] = "  ";
+
+            }
+        }
+
+        public static void createEntranceExitInMaze() { //generates either horizontal or vertical entrance and exit of the maze
+            boolean isHorizontalEntranceExit = random.nextBoolean();
+            boolean isGenerated = false;
+
+            if (isHorizontalEntranceExit) {
+                while (!isGenerated) {
+                    int i = random.nextInt(mazeHeight);
+                    int j = 0;
+
+                    if ("  ".equals(maze[i][j + 1])) {
+                        maze[i][j] = "  ";
+                        isGenerated = true;
+                    }
+                }
+
+                isGenerated = false;
+
+                while (!isGenerated) {
+                    int i = random.nextInt(mazeHeight);
+                    int j = mazeWidth - 1;
+
+                    if (mazeWidth % 2 > 0 && "  ".equals(maze[i][j - 1])) {
+                        maze[i][j] = "  ";
+                        isGenerated = true;
+                    }
+
+                    if (mazeWidth % 2 == 0 && "  ".equals(maze[i][j - 2])) {
+                        maze[i][j] = "  ";
+                        maze[i][j - 1] = " ";
+                        isGenerated = true;
+                    }
+                }
+            } else {
+                while (!isGenerated) {
+                    int i = 0;
+                    int j = random.nextInt(mazeWidth);
+
+                    if ("  ".equals(maze[i + 1][j])) {
+                        maze[i][j] = "  ";
+                        isGenerated = true;
+                    }
+                }
+
+                isGenerated = false;
+
+                while (!isGenerated) {
+                    int i = mazeHeight - 1;
+                    int j = random.nextInt(mazeWidth);
+
+                    if (mazeHeight % 2 > 0 && "  ".equals(maze[i - 1][j])) {
+                        maze[i][j] = "  ";
+                        isGenerated = true;
+                    }
+
+                    if (mazeHeight % 2 == 0 && "  ".equals(maze[i - 2][j])) {
+                        maze[i][j] = "  ";
+                        maze[i - 1][j] = "  ";
+                        isGenerated = true;
+                    }
+                }
+            }
+        }
+    }
+  learner_created: true
+- name: src/maze/Maze.java
+  visible: true
+  text: |
+    package maze;
+
+    import java.io.*;
+    import java.util.NoSuchElementException;
+    import java.util.Scanner;
+
+    public class Maze {
+        private String[][] maze;
+        private int height;
+        private int width;
+
+        public Maze(int height, int width) {
+            this.maze = PrimAlgorithm.generateMazeWithPrimAlgorithm(height, width);
+            this.height = height;
+            this.width = width;
+        }
+
+        public void printMaze() {
+            for (int i = 0; i < height; i++) {
+                for (int j = 0; j < width; j++) {
+                    System.out.print(maze[i][j]);
+                }
+                System.out.println();
+            }
+        }
+
+        public boolean saveToFile(File file) {
+            try (FileWriter writer = new FileWriter(file)) {
+                writer.write(height + " " + width + "\n");
+
+                for (int i = 0; i < height; i++) {
+                    for (int j = 0; j < width; j++) {
+                        writer.write(maze[i][j]);
+                    }
+                    writer.write("\n");
+                }
+
+            } catch (IOException e) {
+                System.out.println("Cannot save the maze. It has an invalid format " + file);
+                return false;
+            }
+            return true;
+        }
+
+
+        public boolean loadFromFile(File file) {
+            try (Scanner scanner = new Scanner(file)) {
+                String[] mazeSize = scanner.nextLine().split(" ");
+                int tempHeight = Integer.parseInt(mazeSize[0]);
+                int tempWeight = Integer.parseInt(mazeSize[1]);
+
+                String[][] tempMaze = new String[tempHeight][tempWeight];
+
+                for (int i = 0; i < tempHeight; i++) {
+                    String line = scanner.nextLine();
+                    int k = 0;
+                    for (int j = 0; j < tempWeight; j++) {
+                        tempMaze[i][j] = line.charAt(k) + "" + line.charAt(k + 1);
+                        k += 2;
+                    }
+                }
+
+                height = tempHeight;
+                width = tempWeight;
+                maze = tempMaze;
+
+            } catch (FileNotFoundException ex) {
+                System.out.println("The file " + file + " does not exist");
+                return false;
+            } catch (IndexOutOfBoundsException | NoSuchElementException | NumberFormatException exc) {
+                System.out.println("Cannot load the maze. It has an invalid format");
+                return false;
+            }
+            return true;
+        }
+    }
+  learner_created: true
+- name: test_maze.txt
+  visible: true
+  text: "15 15\n██████████████████████████████\n██      ██  ██  ██  ██      ██\n██\
+    \  ██████  ██  ██  ██  ██████\n██                          ██\n██████████████\
+    \  ██████████████\n██              ██          ██\n██████  ██████  ██████  ███\
+    ███\n██          ██              ██\n██████  ██████  ██  ██████████\n██  ██  \
+    \    ██  ██          ██\n    ██████  ██████  ██████  ██\n██  ██      ██      \
+    \    ██  ██\n██  ██████  ██████  ██████    \n██              ██      ██  ██\n█\
+    █████████████████████████████\n"
+  learner_created: false
+feedback_link: https://hyperskill.org/projects/47/stages/254/implement
+status: Solved
+feedback:
+  message: Congratulations! Continue on <a href="https://hyperskill.org/projects/47/stages/254/implement">JetBrains
+    Academy</a>
+  time: Sun, 13 Sep 2020 09:10:31 UTC
+record: -1

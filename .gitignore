@@ -1,0 +1,17 @@
+# Project exclude paths
+/.gradle/
+/Maze Runner (1)/task/build/
+/Maze Runner (1)/task/out/
+/Maze Runner (1)/task/out/production/classes/
+/Problems/Boxes/out/
+/Problems/Boxes/out/production/classes/
+/Problems/Filtering the list/out/
+/Problems/Filtering the list/out/production/classes/
+/Problems/Find a value's index/out/
+/Problems/Find a value's index/out/production/classes/
+/Problems/Greek letters/out/
+/Problems/Greek letters/out/production/classes/
+/Problems/Split a list into sublists/out/
+/Problems/Split a list into sublists/out/production/classes/
+/Problems/The longest string in the list/out/
+/Problems/The longest string in the list/out/production/classes/
